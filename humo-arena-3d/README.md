@@ -1,8 +1,13 @@
 # Humo Arena 3D — o'rindiq tanlash web ilovasi
 
-Onlayn chipta sotuvchilar uchun 3D arena xaritasi. Xaridor arenani tepadan ko'radi, sektorni bosadi va
-kamera o'sha o'rindiqqa "uchib" borib, **maydon shu joydan qanday ko'rinishini** ko'rsatadi. Keyin xaridor
-o'rindiqni savatchaga qo'shib, buyurtma beradi.
+Onlayn chipta sotuvchilar uchun 3D arena xaritasi. Uch bosqich:
+1. **Umumiy ko'rinish** — xaridor arenani tepadan ko'radi va sektorni tanlaydi.
+2. **Sektor ko'rinishi** — kamera sektor qarshisiga keladi, o'rindiqlar va qator raqamlari yaqindan ko'rinadi.
+   ‹ › tugmalari bilan qo'shni sektorlarga o'tish mumkin.
+3. **O'rindiqdan ko'rinish** — o'rindiq bosilganda kamera o'sha joyga uchib, **maydon shu joydan qanday
+   ko'rinishini** ko'rsatadi. Xaridor o'rindiqni savatchaga qo'shib, buyurtma beradi.
+
+"Orqaga" tugmasi (yoki Esc) har safar bitta bosqich orqaga qaytaradi.
 
 ## Imkoniyatlar
 - To'liq 3D arena: muz maydoni (xokkey), konsert sahnasi yoki boks ringi — tadbir turiga qarab almashadi
@@ -59,6 +64,7 @@ Ilova ota-sahifaga `postMessage` orqali xabar yuboradi:
 |---|---|
 | `humo:ready` | ilova yuklandi |
 | `humo:event` | tadbir almashdi |
+| `humo:sectionView` | sektor ko'rinishi ochildi |
 | `humo:seatView` | o'rindiqdan ko'rinish ochildi |
 | `humo:cart` | savatcha o'zgardi (`seats`, `total`) |
 | `humo:checkout` | buyurtma berildi (`order`) |
@@ -86,5 +92,6 @@ ichidagi `LOWER`, `UPPER`, `BOUNDS`, `SUITES_PER_SIDE` konstantalari).
 
 ## Skrinshotlar
 ![Umumiy ko'rinish](docs/overview.png)
+![Sektor ko'rinishi](docs/section-view.png)
 ![Kreslodan ko'rinish](docs/seat-view.png)
 ![Konsert](docs/concert.png)

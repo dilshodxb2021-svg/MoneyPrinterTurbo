@@ -13,6 +13,7 @@
   <div id="stage">
     <canvas id="c"></canvas>
     <div id="labels"></div>
+    <div id="rowLabels" class="labels"></div>
 
     <header class="brand">
       <div class="logo">H</div>
@@ -22,7 +23,11 @@
       </div>
     </header>
 
-    <button id="backBtn" class="pill back hidden">← <span data-i18n="back"></span></button>
+    <button id="backBtn" class="pill back hidden">← <span id="backLabel"></span></button>
+    <div id="secNav" class="sec-nav hidden">
+      <button id="prevSec" class="nav-arrow" aria-label="prev">‹</button>
+      <button id="nextSec" class="nav-arrow" aria-label="next">›</button>
+    </div>
     <div id="hint" class="pill hint" data-i18n="hint"></div>
     <div id="tooltip" class="tooltip hidden"></div>
 

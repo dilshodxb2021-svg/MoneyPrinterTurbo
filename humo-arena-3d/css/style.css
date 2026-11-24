@@ -21,13 +21,20 @@ body { display: flex; }
   color: var(--text); border-radius: 999px; padding: 9px 16px; font-size: 13px; }
 .back { top: 70px; left: 16px; cursor: pointer; font-weight: 600; }
 .back:hover { border-color: var(--accent); }
-.hint { bottom: 18px; left: 50%; transform: translateX(-50%); color: #c9d0e0; white-space: nowrap; pointer-events: none; }
+.hint { bottom: 18px; left: 50%; transform: translateX(-50%); color: #c9d0e0; white-space: nowrap; pointer-events: none; text-align: center; border-radius: 14px; line-height: 1.5; }
+.hint .muted { font-size: 12px; }
 
 .tooltip { position: absolute; pointer-events: none; background: rgba(10,12,18,.94); border: 1px solid var(--line);
   border-radius: 10px; padding: 8px 12px; font-size: 13px; transform: translate(14px, 14px); min-width: 140px; }
 .tooltip b { font-size: 14px; } .tooltip .muted { font-size: 12px; }
 
-#labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+#labels, .labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.row-label { position: absolute; transform: translate(-50%, -50%); font-size: 10px; font-weight: 700; color: #cfd6e6;
+  background: rgba(10,12,18,.7); border-radius: 4px; padding: 0 4px; min-width: 16px; text-align: center; }
+.sec-nav { position: absolute; inset: 50% 12px auto 12px; display: flex; justify-content: space-between; pointer-events: none; transform: translateY(-50%); }
+.nav-arrow { pointer-events: auto; width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--line);
+  background: rgba(16,19,27,.82); color: var(--text); font-size: 26px; line-height: 1; cursor: pointer; backdrop-filter: blur(8px); }
+.nav-arrow:hover { border-color: var(--accent); }
 .sec-label { position: absolute; transform: translate(-50%, -50%); font-size: 10px; font-weight: 700;
   color: rgba(255,255,255,.85); text-shadow: 0 1px 3px #000; letter-spacing: .03em; }
 .sec-label.vip { color: #ffb48a; }
@@ -127,6 +134,8 @@ select, input { width: 100%; background: var(--panel2); color: var(--text); bord
   .seat-card .btn { padding: 8px 12px; font-size: 13px; }
   body.seat-mode #panel { max-height: 30vh; }
   body.seat-mode .hint { display: none; }
+  body.section-mode .hint { padding: 6px 12px; } body.section-mode .hint br, body.section-mode .hint .muted { display: none; }
+  .nav-arrow { width: 38px; height: 38px; font-size: 22px; }
   .back { top: 64px; }
   .sec-list { grid-template-columns: repeat(6, 1fr); }
 }

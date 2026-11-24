@@ -14,6 +14,8 @@ const state = {
   view: -1,            // ko'rilayotgan o'rindiq indeksi
   mode: 'overview',
   hoverSec: null,
+  hoverSeat: -1,
+  section: null,       // tanlangan sektor (section/seat rejimida)
   filterCat: null,
 };
 const t = (k) => (STR[state.lang] && STR[state.lang][k]) || STR.uz[k] || k;
@@ -55,6 +57,23 @@ controls.enableDamping = true; controls.dampingFactor = 0.08; controls.enablePan
 const arena = buildArena(scene);
 const { seats, sections, seatMesh } = arena;
 document.title = `${CONFIG.venueName} 3D`;
+
+// Har bir sektor uchun markaz, maydon tomon yo'nalish va o'lcham — sektor ko'rinishi kamerasi uchun
+for (const sec of sections.values()) {
+  const c = new THREE.Vector3(), n = new THREE.Vector3();
+  for (const i of sec.seatIdx) { const s = seats[i]; c.x += s.x; c.y += s.y; c.z += s.z; n.x -= s.nx; n.z -= s.nz; }
+  c.divideScalar(sec.seatIdx.length); n.normalize();
+  let r = 0; for (const i of sec.seatIdx) { const s = seats[i]; r = Math.max(r, Math.hypot(s.x - c.x, s.y - c.y, s.z - c.z)); }
+  sec.center = c; sec.inward = n; sec.radius = r;
+}
+// Qo'shni sektorlar (bir yarus ichida aylana bo'ylab)
+const tierOrder = {};
+for (const sec of sections.values()) (tierOrder[sec.tier] ||= []).push(sec.id);
+for (const k in tierOrder) tierOrder[k].sort();
+function neighbor(secId, dir) {
+  const list = tierOrder[sections.get(secId).tier], k = list.indexOf(secId);
+  return list[(k + dir + list.length) % list.length];
+}
 $('venueName').textContent = CONFIG.venueName;
 
 // ---------- Ranglar ----------
@@ -68,9 +87,11 @@ function colorFor(i) {
   const s = seats[i];
   if (state.cart.has(i)) return COL.cart;
   if (i === state.view) return COL.view;
-  if (state.sold.has(s.id)) return COL.sold;
+  if (state.sold.has(s.id)) return (state.mode === 'section' && s.sec !== state.section) ? tmpC.copy(COL.sold).multiplyScalar(0.5) : COL.sold;
   tmpC.copy(catColor[s.cat]);
   if (state.filterCat && state.filterCat !== s.cat) return tmpC.multiplyScalar(0.22);
+  if (state.mode === 'section' && s.sec !== state.section) return tmpC.multiplyScalar(0.16);
+  if (i === state.hoverSeat) return tmpC.lerp(COL.white, 0.7);
   if (state.hoverSec === s.sec) tmpC.lerp(COL.white, 0.45);
   return tmpC;
 }
@@ -105,30 +126,78 @@ function setControlsSeat() {
   Object.assign(controls, { minDistance: 0.5, maxDistance: 0.5, enableZoom: false, rotateSpeed: -0.28, minPolarAngle: 0.5, maxPolarAngle: 2.2 });
 }
 
+function setMode(mode) {
+  state.mode = mode;
+  document.body.classList.toggle('seat-mode', mode === 'seat');
+  document.body.classList.toggle('section-mode', mode === 'section');
+  $('seatCard').classList.toggle('hidden', mode !== 'seat');
+  $('backBtn').classList.toggle('hidden', mode === 'overview');
+  $('secNav').classList.toggle('hidden', mode !== 'section');
+  $('tooltip').classList.add('hidden');
+  state.hoverSeat = -1;
+  if (state.hoverSec) state.hoverSec = null;
+  updateHint(); updateBackBtn(); buildRowLabels();
+  paintAll();
+}
+function updateBackBtn() {
+  $('backLabel').textContent = state.mode === 'seat' ? secTitle(state.section) : t('back');
+}
+function secTitle(id) { return sections.get(id).cat === 'vip' ? `${t('vipBox')} ${id.slice(1)}` : `${t('section')} ${id}`; }
+function updateHint() {
+  const h = $('hint');
+  if (state.mode === 'overview') h.textContent = t('hint');
+  else if (state.mode === 'seat') h.textContent = t('seatHint');
+  else {
+    const sec = sections.get(state.section);
+    h.innerHTML = `<b>${secTitle(sec.id)}</b> · ${catName(sec.cat)} · ${fmt(priceOf(sec.cat))} · ${freeCount(sec.id)} ${t('free')}<br><span class="muted">${t('pickSeat')}</span>`;
+  }
+}
+
 function goOverview() {
   const prev = state.view; state.view = -1; if (prev >= 0) paint(prev);
-  state.mode = 'overview'; document.body.classList.remove('seat-mode');
-  $('seatCard').classList.add('hidden'); $('backBtn').classList.add('hidden');
-  $('hint').textContent = t('hint'); $('hint').classList.remove('hidden');
+  state.section = null;
+  setMode('overview');
   controls.minDistance = 0; controls.maxDistance = Infinity;
   flyTo(OVERVIEW.pos.clone(), OVERVIEW.target.clone(), OVERVIEW.fov, 1500, setControlsOverview);
 }
 
+// 2-bosqich: sektor qarshisidan, o'rindiqlar yaqindan ko'rinadi
+function viewSection(secId) {
+  const sec = sections.get(secId);
+  state.view = -1; state.section = secId;
+  setMode('section');
+  const fov = 45, aspect = Math.max(0.45, Math.min(1, camera.aspect));
+  const dist = Math.max(9, (sec.radius * 1.25) / Math.tan(THREE.MathUtils.degToRad(fov / 2)) / aspect);
+  const pos = sec.center.clone().addScaledVector(sec.inward, dist * 0.92);
+  pos.y += dist * 0.38;
+  const target = sec.center.clone(); target.y += 0.6;
+  controls.minDistance = 0; controls.maxDistance = Infinity;
+  flyTo(pos, target, fov, 1400, () => {
+    Object.assign(controls, { minDistance: Math.max(5, dist * 0.45), maxDistance: dist * 1.8, enableZoom: true,
+      rotateSpeed: 0.5, minPolarAngle: 0.35, maxPolarAngle: 1.75 });
+  });
+  emit('sectionView', { section: secId });
+}
+
+// 3-bosqich: o'rindiqdan maydon ko'rinishi
 function viewSeat(i) {
   const s = seats[i];
-  const prev = state.view; state.view = i; if (prev >= 0) paint(prev); paint(i);
-  state.mode = 'seat'; document.body.classList.add('seat-mode');
-  if (state.hoverSec) { const h = state.hoverSec; state.hoverSec = null; paintSection(h); }
+  const prev = state.view; state.view = i; if (prev >= 0) paint(prev);
+  const wasSeat = state.mode === 'seat';
+  state.section = s.sec;
+  setMode('seat');
   const eye = new THREE.Vector3(s.x - s.nx * 0.08, s.y + 1.15 * s.scale, s.z - s.nz * 0.08);
   const focus = new THREE.Vector3(0, 0.8, 0);
   const near = eye.clone().add(focus.clone().sub(eye).normalize().multiplyScalar(0.5));
   controls.minDistance = 0; controls.maxDistance = Infinity;
-  flyTo(eye, focus, 62, prev >= 0 ? 1100 : 1800, () => { controls.target.copy(near); setControlsSeat(); controls.update(); });
-  $('backBtn').classList.remove('hidden');
-  $('hint').textContent = t('seatHint');
+  flyTo(eye, focus, 62, wasSeat ? 1100 : 1600, () => { controls.target.copy(near); setControlsSeat(); controls.update(); });
   renderSeatCard();
-  $('tooltip').classList.add('hidden');
   emit('seatView', { seat: seatInfo(i) });
+}
+
+function goBack() {
+  if (state.mode === 'seat') viewSection(state.section);
+  else if (state.mode === 'section') goOverview();
 }
 
 function seatInfo(i) {
@@ -136,24 +205,11 @@ function seatInfo(i) {
   return { id: s.id, section: s.sec, row: s.row, seat: s.num, category: s.cat, price: priceOf(s.cat) };
 }
 
-// Sektordagi eng yaxshi bo'sh joy: sektor markaziga eng yaqini
-function bestSeat(secId, near) {
-  const sec = sections.get(secId);
-  const ref = near || sec.anchor;
-  let best = -1, bd = Infinity;
-  for (const i of sec.seatIdx) {
-    const s = seats[i]; if (state.sold.has(s.id)) continue;
-    const d = (s.x - ref.x) ** 2 + (s.z - ref.z) ** 2 + (near ? (s.y - ref.y) ** 2 : 0);
-    if (d < bd) { bd = d; best = i; }
-  }
-  return best;
-}
-
 // ---------- UI ----------
 function applyI18n() {
   document.documentElement.lang = state.lang;
   document.querySelectorAll('[data-i18n]').forEach((el) => (el.textContent = t(el.dataset.i18n)));
-  $('hint').textContent = state.mode === 'seat' ? t('seatHint') : t('hint');
+  updateHint(); updateBackBtn();
   document.querySelectorAll('#langs button').forEach((b) => b.classList.toggle('on', b.dataset.lang === state.lang));
   renderEvents(); renderCats(); renderSections(); renderCart(); if (state.view >= 0) renderSeatCard();
   updateScoreboard();
@@ -232,7 +288,7 @@ function toggleCart(i) {
     if (state.cart.size >= CONFIG.maxSeatsPerOrder) return toast(t('limit').replace('{n}', CONFIG.maxSeatsPerOrder));
     state.cart.add(i);
   }
-  paint(i); renderCart(); renderSections(); renderSeatCard();
+  paint(i); renderCart(); renderSections(); renderSeatCard(); updateHint();
   emit('cart', { eventId: state.event.id, seats: [...state.cart].map(seatInfo), total: cartTotal() });
 }
 
@@ -244,18 +300,37 @@ for (const s of sections.values()) {
   el.textContent = s.label; $('labels').appendChild(el); labelEls.set(s.id, el);
 }
 const pv = new THREE.Vector3();
-function updateLabels() {
-  const show = state.mode === 'overview' && !tween;
-  $('labels').style.display = show ? '' : 'none';
-  if (!show) return;
-  const w = canvas.clientWidth, h = canvas.clientHeight;
-  for (const s of sections.values()) {
-    pv.copy(s.anchor).project(camera);
-    const el = labelEls.get(s.id);
-    if (pv.z > 1) { el.style.display = 'none'; continue; }
-    el.style.display = '';
-    el.style.left = ((pv.x + 1) / 2 * w) + 'px'; el.style.top = ((1 - pv.y) / 2 * h) + 'px';
+let rowLabels = []; // [{el, pos}]
+function buildRowLabels() {
+  rowLabels.forEach((r) => r.el.remove()); rowLabels = [];
+  if (state.mode !== 'section') return;
+  const sec = sections.get(state.section);
+  const byRow = new Map();
+  for (const i of sec.seatIdx) { const s = seats[i]; (byRow.get(s.row) || byRow.set(s.row, []).get(s.row)).push(s); }
+  for (const [row, list] of byRow) {
+    list.sort((a, b) => a.num - b.num);
+    for (const [a, b] of [[list[0], list[1]], [list[list.length - 1], list[list.length - 2]]]) {
+      if (!b) continue;
+      const pos = new THREE.Vector3(a.x + (a.x - b.x) * 1.4, a.y + 0.45, a.z + (a.z - b.z) * 1.4);
+      const el = document.createElement('div'); el.className = 'row-label'; el.textContent = row;
+      $('rowLabels').appendChild(el); rowLabels.push({ el, pos });
+    }
   }
+}
+function place(el, pos, w, h) {
+  pv.copy(pos).project(camera);
+  if (pv.z > 1) { el.style.display = 'none'; return; }
+  el.style.display = '';
+  el.style.left = ((pv.x + 1) / 2 * w) + 'px'; el.style.top = ((1 - pv.y) / 2 * h) + 'px';
+}
+function updateLabels() {
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  const showSec = state.mode === 'overview' && !tween;
+  $('labels').style.display = showSec ? '' : 'none';
+  if (showSec) for (const s of sections.values()) place(labelEls.get(s.id), s.anchor, w, h);
+  const showRows = state.mode === 'section' && !tween;
+  $('rowLabels').style.display = showRows ? '' : 'none';
+  if (showRows) for (const r of rowLabels) place(r.el, r.pos, w, h);
 }
 
 // ---------- Sichqoncha / sensor ----------
@@ -279,17 +354,23 @@ canvas.addEventListener('pointerup', (e) => {
   const i = pick(e.clientX, e.clientY);
   if (i < 0) return;
   const s = seats[i];
-  if (state.mode === 'overview') {
-    const target = state.sold.has(s.id) ? bestSeat(s.sec, s) : i;
-    if (target < 0) return toast(t('sold'));
-    viewSeat(target);
-  } else {
-    if (i === state.view) return toggleCart(i);
-    if (state.sold.has(s.id)) return toast(`${t('section')} ${s.sec}, ${t('row')} ${s.row}, ${t('seat')} ${s.num} — ${t('sold')}`);
-    viewSeat(i);
+  const soldMsg = () => toast(`${t('section')} ${s.sec}, ${t('row')} ${s.row}, ${t('seat')} ${s.num} — ${t('sold')}`);
+  if (state.mode === 'overview') return viewSection(s.sec);
+  if (state.mode === 'section') {
+    if (s.sec !== state.section) return viewSection(s.sec);
+    if (state.sold.has(s.id)) return soldMsg();
+    return viewSeat(i);
   }
+  if (i === state.view) return toggleCart(i);
+  if (state.sold.has(s.id)) return soldMsg();
+  viewSeat(i);
 });
 
+function setHoverSeat(i) {
+  if (i === state.hoverSeat) return;
+  const old = state.hoverSeat; state.hoverSeat = i;
+  if (old >= 0) paint(old); if (i >= 0) paint(i);
+}
 function setHover(secId) {
   if (secId === state.hoverSec) return;
   const old = state.hoverSec; state.hoverSec = secId;
@@ -302,7 +383,7 @@ function processHover() {
   if (pointer.type === 'touch') return;
   const i = pick(pointer.x, pointer.y);
   const tip = $('tooltip');
-  if (i < 0) { setHover(null); tip.classList.add('hidden'); return; }
+  if (i < 0) { setHover(null); setHoverSeat(-1); tip.classList.add('hidden'); canvas.style.cursor = ''; return; }
   const s = seats[i];
   const r = canvas.getBoundingClientRect();
   tip.style.left = (pointer.x - r.left) + 'px'; tip.style.top = (pointer.y - r.top) + 'px';
@@ -311,8 +392,12 @@ function processHover() {
     setHover(s.sec);
     const secName = s.cat === 'vip' ? `${t('vipBox')} ${s.sec.slice(1)}` : `${t('section')} ${s.sec}`;
     tip.innerHTML = `<b>${secName}</b><div class="muted">${catName(s.cat)}</div><div>${t('from')} <b>${fmt(priceOf(s.cat))}</b></div><div class="muted">${freeCount(s.sec)} ${t('free')}</div>`;
+  } else if (state.mode === 'section' && s.sec !== state.section) {
+    setHoverSeat(-1); canvas.style.cursor = 'pointer';
+    tip.innerHTML = `<b>${secTitle(s.sec)}</b><div class="muted">${catName(s.cat)} · ${fmt(priceOf(s.cat))}</div>`;
   } else {
     canvas.style.cursor = 'pointer';
+    setHoverSeat(state.sold.has(s.id) ? -1 : i);
     const sold = state.sold.has(s.id);
     tip.innerHTML = `<b>${t('row')} ${s.row} · ${t('seat')} ${s.num}</b><div class="muted">${t('section')} ${s.sec}</div><div>${sold ? t('sold') : fmt(priceOf(s.cat))}</div>`;
   }
@@ -331,17 +416,18 @@ $('cats').addEventListener('click', (e) => {
 });
 $('secList').addEventListener('click', (e) => {
   const b = e.target.closest('.sec-btn'); if (!b) return;
-  const i = bestSeat(b.dataset.sec); if (i < 0) return toast(t('sold'));
-  viewSeat(i);
+  viewSection(b.dataset.sec);
 });
 $('cartItems').addEventListener('click', (e) => {
   const rm = e.target.dataset.remove;
   if (rm !== undefined) { toggleCart(+rm); return; }
   const it = e.target.closest('.cart-item'); if (it) viewSeat(+it.dataset.seat);
 });
-$('backBtn').addEventListener('click', goOverview);
+$('backBtn').addEventListener('click', goBack);
+$('prevSec').addEventListener('click', () => state.section && viewSection(neighbor(state.section, -1)));
+$('nextSec').addEventListener('click', () => state.section && viewSection(neighbor(state.section, 1)));
 $('scBtn').addEventListener('click', () => toggleCart(state.view));
-window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && state.mode === 'seat') goOverview(); });
+window.addEventListener('keydown', (e) => { if (e.key === 'Escape') goBack(); });
 
 // ---------- Buyurtma ----------
 function summaryHTML(idx) {
@@ -402,7 +488,7 @@ async function loadEvent(id) {
   }
   arena.setEventKind(ev.kind);
   paintAll(); applyI18n();
-  if (state.mode === 'seat') goOverview();
+  if (state.mode !== 'overview') goOverview();
   emit('event', { eventId: ev.id });
 }
 function updateScoreboard() {
@@ -444,5 +530,8 @@ loadEvent(params.get('event') || CONFIG.events[0].id).then(() => {
   flyTo(OVERVIEW.pos.clone(), OVERVIEW.target.clone(), OVERVIEW.fov, 2200, setControlsOverview);
   requestAnimationFrame(frame);
   emit('ready', { seats: seats.length, sections: sections.size });
-  window.__arena = { state, seats, sections, viewSeat, goOverview, toggleCart };
+  // Sinov va tashqi skriptlar uchun
+  const project = (i) => { const s = seats[i], r = canvas.getBoundingClientRect(); pv.set(s.x, s.y + 0.5, s.z).project(camera);
+    return { x: r.left + (pv.x + 1) / 2 * r.width, y: r.top + (1 - pv.y) / 2 * r.height }; };
+  window.__arena = { state, seats, sections, viewSeat, viewSection, goOverview, toggleCart, project };
 });
