@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Chipta sotuvchi sayti — joylash namunasi</title>
+  <style>
+    body { margin: 0; font-family: Arial, sans-serif; background: #f4f5f8; }
+    header { padding: 16px 24px; background: #fff; border-bottom: 1px solid #e3e5ea; font-weight: 700; }
+    main { max-width: 1280px; margin: 20px auto; padding: 0 16px; }
+    iframe { width: 100%; height: 720px; border: 0; border-radius: 14px; background: #07080d; }
+    pre { background: #fff; border: 1px solid #e3e5ea; border-radius: 10px; padding: 12px; font-size: 12px; max-height: 220px; overflow: auto; }
+  </style>
+</head>
+<body>
+  <header>Sizning chipta saytingiz</header>
+  <main>
+    <iframe id="arena" src="./index.html?lang=uz"></iframe>
+    <h3>Ilovadan kelgan xabarlar</h3>
+    <pre id="log"></pre>
+  </main>
+  <script>
+    const log = document.getElementById('log');
+    window.addEventListener('message', (e) => {
+      if (!e.data || !String(e.data.type).startsWith('humo:')) return;
+      log.textContent = JSON.stringify(e.data) + '\n' + log.textContent;
+      // Masalan, buyurtma kelganda o'z to'lov tizimingizga yo'naltiring:
+      // if (e.data.type === 'humo:checkout') location.href = '/pay?order=' + e.data.order.orderId;
+    });
+  </script>
+</body>
+</html>
